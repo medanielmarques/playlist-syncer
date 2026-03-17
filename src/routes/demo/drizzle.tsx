@@ -2,47 +2,47 @@ import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { desc } from "drizzle-orm";
 import { db } from "#/db/index";
-import { todos } from "#/db/schema";
+import { sources } from "#/db/schema";
 
-const getTodos = createServerFn({
+const getSources = createServerFn({
 	method: "GET",
 }).handler(async () => {
-	return await db.query.todos.findMany({
-		orderBy: [desc(todos.createdAt)],
+	return await db.query.sources.findMany({
+		orderBy: [desc(sources.created_at)],
 	});
 });
 
-const createTodo = createServerFn({
+const createSource = createServerFn({
 	method: "POST",
 })
-	.inputValidator((data: { title: string }) => data)
+	.inputValidator((data: { url: string; type: "playlist" | "channel" | "user" | "video" }) => data)
 	.handler(async ({ data }) => {
-		await db.insert(todos).values({ title: data.title });
+		await db.insert(sources).values({ url: data.url, type: data.type });
 		return { success: true };
 	});
 
 export const Route = createFileRoute("/demo/drizzle")({
 	component: DemoDrizzle,
-	loader: async () => await getTodos(),
+	loader: async () => await getSources(),
 });
 
 function DemoDrizzle() {
 	const router = useRouter();
-	const todos = Route.useLoaderData();
+	const sourceList = Route.useLoaderData();
 
 	const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
 		const formData = new FormData(e.target as HTMLFormElement);
-		const title = formData.get("title") as string;
+		const url = formData.get("url") as string;
 
-		if (!title) return;
+		if (!url) return;
 
 		try {
-			await createTodo({ data: { title } });
+			await createSource({ data: { url, type: "playlist" } });
 			router.invalidate();
 			(e.target as HTMLFormElement).reset();
 		} catch (error) {
-			console.error("Failed to create todo:", error);
+			console.error("Failed to create source:", error);
 		}
 	};
 
@@ -85,12 +85,12 @@ function DemoDrizzle() {
 					</h1>
 				</div>
 
-				<h2 className="text-2xl font-bold mb-4 text-indigo-200">Todos</h2>
+				<h2 className="text-2xl font-bold mb-4 text-indigo-200">Sources</h2>
 
 				<ul className="space-y-3 mb-6">
-					{todos.map((todo) => (
+					{sourceList.map((source) => (
 						<li
-							key={todo.id}
+							key={source.id}
 							className="rounded-lg p-4 shadow-md border transition-all hover:scale-[1.02] cursor-pointer group"
 							style={{
 								background:
@@ -100,15 +100,15 @@ function DemoDrizzle() {
 						>
 							<div className="flex items-center justify-between">
 								<span className="text-lg font-medium text-white group-hover:text-indigo-200 transition-colors">
-									{todo.title}
+									{source.url}
 								</span>
-								<span className="text-xs text-indigo-300/70">#{todo.id}</span>
+								<span className="text-xs text-indigo-300/70">{source.type} #{source.id}</span>
 							</div>
 						</li>
 					))}
-					{todos.length === 0 && (
+					{sourceList.length === 0 && (
 						<li className="text-center py-8 text-indigo-300/70">
-							No todos yet. Create one below!
+							No sources yet. Add one below!
 						</li>
 					)}
 				</ul>
@@ -116,8 +116,8 @@ function DemoDrizzle() {
 				<form onSubmit={handleSubmit} className="flex gap-2">
 					<input
 						type="text"
-						name="title"
-						placeholder="Add a new todo..."
+						name="url"
+						placeholder="Add a playlist/channel URL..."
 						className="flex-1 px-4 py-3 rounded-lg border focus:outline-none focus:ring-2 transition-all text-white placeholder-indigo-300/50"
 						style={{
 							background: "rgba(93, 103, 227, 0.1)",
@@ -132,7 +132,7 @@ function DemoDrizzle() {
 							color: "white",
 						}}
 					>
-						Add Todo
+						Add Source
 					</button>
 				</form>
 
@@ -144,37 +144,30 @@ function DemoDrizzle() {
 					}}
 				>
 					<h3 className="text-lg font-semibold mb-2 text-indigo-200">
-						Powered by Drizzle ORM
+						Powered by Drizzle ORM + SQLite
 					</h3>
 					<p className="text-sm text-indigo-300/80 mb-4">
-						Next-generation ORM for Node.js & TypeScript with PostgreSQL
+						Next-generation ORM for Node.js & TypeScript with SQLite
 					</p>
 					<div className="space-y-2 text-sm">
 						<p className="text-indigo-200 font-medium">Setup Instructions:</p>
 						<ol className="list-decimal list-inside space-y-2 text-indigo-300/80">
 							<li>
-								Configure your{" "}
-								<code className="px-2 py-1 rounded bg-black/30 text-purple-300">
-									DATABASE_URL
-								</code>{" "}
-								in .env.local
-							</li>
-							<li>
 								Run:{" "}
 								<code className="px-2 py-1 rounded bg-black/30 text-purple-300">
-									bunx --bun drizzle-kit generate
+									bun db:generate
 								</code>
 							</li>
 							<li>
 								Run:{" "}
 								<code className="px-2 py-1 rounded bg-black/30 text-purple-300">
-									bunx --bun drizzle-kit migrate
+									bun db:migrate
 								</code>
 							</li>
 							<li>
 								Optional:{" "}
 								<code className="px-2 py-1 rounded bg-black/30 text-purple-300">
-									bunx --bun drizzle-kit studio
+									bun db:studio
 								</code>
 							</li>
 						</ol>
