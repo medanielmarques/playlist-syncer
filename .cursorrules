@@ -1,0 +1,7 @@
+# Playlist Syncer
+
+- **Package manager**: bun (use `bun add`, `bun run`, etc.)
+- **Stack**: TanStack Start, React 19, Vite, Tailwind CSS
+- **Lint/format**: Biome (bun check:fix)
+- **Imports**: use `#/` alias for `./src/*`
+- copy always in english
