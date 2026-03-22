@@ -6,7 +6,7 @@ import path from "node:path";
 import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
 
 import { db } from "#/db/index";
-import { jobs, sources, videos } from "#/db/schema";
+import { appSettings, jobs, sources, videos } from "#/db/schema";
 import {
 	ARCHIVES_ROOT,
 	DATA_ROOT,
@@ -534,12 +534,26 @@ export type SyncAllOutcome = {
 	results: PromiseSettledResult<SyncSourceOutcome>[];
 };
 
+async function recordGlobalSyncStarted(): Promise<void> {
+	const now = isoNow();
+	await db
+		.update(appSettings)
+		.set({
+			last_global_sync_started_at: now,
+			updated_at: now,
+		})
+		.where(eq(appSettings.id, 1));
+}
+
 /**
  * Loads all sources and syncs them in parallel; failures do not block other sources.
+ * Updates `last_global_sync_started_at` so auto sync measures intervals from the last
+ * global run (startup, manual, or auto).
  */
 export async function syncAllSources(
 	trigger: SyncJobTrigger,
 ): Promise<SyncAllOutcome> {
+	await recordGlobalSyncStarted();
 	const allSources = await db.query.sources.findMany({ columns: { id: true } });
 	const results = await Promise.allSettled(
 		allSources.map((s) => syncSource(s.id, trigger)),

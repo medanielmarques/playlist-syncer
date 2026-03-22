@@ -8,3 +8,11 @@ db.$client.exec("PRAGMA foreign_keys = ON");
 db.$client.exec("PRAGMA journal_mode = WAL");
 
 export { db };
+
+if (typeof window === "undefined") {
+	queueMicrotask(() => {
+		void import("#/lib/server/scheduler").then((mod) => {
+			mod.ensureSchedulerStarted();
+		});
+	});
+}
