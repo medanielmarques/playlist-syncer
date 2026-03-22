@@ -1,8 +1,10 @@
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
+import { drizzle } from "drizzle-orm/bun-sqlite";
 
 import * as schema from "./schema.ts";
 
-const sqlite = new Database("./sqlite.db");
+const db = drizzle("./sqlite.db", { schema });
 
-export const db = drizzle(sqlite, { schema });
+db.$client.exec("PRAGMA foreign_keys = ON");
+db.$client.exec("PRAGMA journal_mode = WAL");
+
+export { db };

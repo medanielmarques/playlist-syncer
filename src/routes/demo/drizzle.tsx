@@ -1,24 +1,25 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { desc } from "drizzle-orm";
-import { db } from "#/db/index";
-import { sources } from "#/db/schema";
+import { SourceInspectionError } from "#/lib/server/source-inspector";
+import {
+	addSourceFromUrl,
+	listSourcesForDashboard,
+	SourceAlreadyExistsError,
+} from "#/lib/server/source-service";
 
 const getSources = createServerFn({
 	method: "GET",
 }).handler(async () => {
-	return await db.query.sources.findMany({
-		orderBy: [desc(sources.created_at)],
-	});
+	return await listSourcesForDashboard();
 });
 
 const createSource = createServerFn({
 	method: "POST",
 })
-	.inputValidator((data: { url: string; type: "playlist" | "channel" | "user" | "video" }) => data)
+	.inputValidator((data: { url: string }) => data)
 	.handler(async ({ data }) => {
-		await db.insert(sources).values({ url: data.url, type: data.type });
-		return { success: true };
+		await addSourceFromUrl(data.url);
+		return { success: true as const };
 	});
 
 export const Route = createFileRoute("/demo/drizzle")({
@@ -38,11 +39,17 @@ function DemoDrizzle() {
 		if (!url) return;
 
 		try {
-			await createSource({ data: { url, type: "playlist" } });
+			await createSource({ data: { url } });
 			router.invalidate();
 			(e.target as HTMLFormElement).reset();
 		} catch (error) {
+			const message =
+				error instanceof SourceInspectionError ||
+				error instanceof SourceAlreadyExistsError
+					? error.message
+					: "Failed to add source";
 			console.error("Failed to create source:", error);
+			window.alert(message);
 		}
 	};
 
@@ -98,12 +105,17 @@ function DemoDrizzle() {
 								borderColor: "rgba(93, 103, 227, 0.3)",
 							}}
 						>
-							<div className="flex items-center justify-between">
+							<div className="flex items-center justify-between gap-2">
 								<span className="text-lg font-medium text-white group-hover:text-indigo-200 transition-colors">
-									{source.url}
+									{source.title ?? source.normalized_url}
 								</span>
-								<span className="text-xs text-indigo-300/70">{source.type} #{source.id}</span>
+								<span className="text-xs text-indigo-300/70 shrink-0">
+									{source.source_type} #{source.id}
+								</span>
 							</div>
+							<p className="text-sm text-indigo-300/80 mt-1 break-all">
+								{source.normalized_url}
+							</p>
 						</li>
 					))}
 					{sourceList.length === 0 && (
