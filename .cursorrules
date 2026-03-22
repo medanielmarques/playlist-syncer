@@ -1,7 +1,53 @@
 # Playlist Syncer
 
+# General
+
 - **Package manager**: bun (use `bun add`, `bun run`, etc.)
 - **Stack**: TanStack Start, React 19, Vite, Tailwind CSS
 - **Lint/format**: Biome (bun check:fix)
 - **Imports**: use `#/` alias for `./src/*`
 - copy always in english
+
+# Code Rules
+
+- Always use the design system colors. Only use hardcoded color values if it really makes sense
+- Never modify shadcn components in src/components/ui (use className prop instead)
+- Never create React components inside other components
+- Never use barrel exports
+- Never remove comments
+- Never change copy language unless explicitly asked to
+- Prefer types over interfaces
+- Use @/ for src imports
+- Extract inline conditionals to explanatory variables (e.g., `const hasData = data && data.length > 0`)
+- Break large components into smaller, cohesive sub-components:
+  - Keep sub-components in the same file if not reusable elsewhere
+  - Create separate files only for reusable components
+
+# Naming Conventions
+
+- Files: kebab-case (research-assistant.tsx)
+- Components: PascalCase (ResearchAssistant)
+- Functions/variables: camelCase (generateScript)
+- Constants: UPPER_CASE (API_KEY)
+- Types: PascalCase (ScriptResponse)
+
+# Architecture
+
+Backend structure (src/server/api/):
+
+- Routers: Controllers that call use cases
+- Use cases: Business logic, DB operations, External API calls
+- Services: Shared utilities
+
+# Design Principles
+
+- Clean, simple, consistent
+- Leverage Shadcn components
+- Don't reinvent the wheel
+
+# 🚨 DATABASE RULES
+
+- NEVER use `drizzle-kit push`
+- NEVER use schema sync commands
+- ALWAYS use migrations
+- If schema changes are needed, create a new migration only
