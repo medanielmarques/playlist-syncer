@@ -65,7 +65,23 @@ export function SourcesTable({
 										{formatIsoDateTime(s.last_sync_finished_at)}
 									</TableCell>
 									<TableCell>
-										{formatSyncStatus(s.last_sync_status ?? undefined)}
+										<span
+											className="inline-flex flex-col gap-0.5"
+											title={
+												s.last_sync_status === "failed" && s.last_sync_error
+													? s.last_sync_error
+													: undefined
+											}
+										>
+											<span>
+												{formatSyncStatus(s.last_sync_status ?? undefined)}
+											</span>
+											{s.last_sync_status === "failed" && s.last_sync_error ? (
+												<span className="text-destructive max-w-[200px] truncate text-[11px]">
+													{s.last_sync_error}
+												</span>
+											) : null}
+										</span>
 									</TableCell>
 									<TableCell className="text-end">
 										<div className="flex justify-end gap-2">

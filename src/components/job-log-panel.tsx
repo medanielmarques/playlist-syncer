@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Button } from "#/components/ui/button";
 import { ScrollArea } from "#/components/ui/scroll-area";
 import {
@@ -29,6 +29,14 @@ export function JobLogPanel({
 }: JobLogPanelProps) {
 	const hasJobs = recentJobs.length > 0;
 	const logPreview = useMemo(() => logText ?? "", [logText]);
+	const logEndRef = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		if (logText === null) {
+			return;
+		}
+		logEndRef.current?.scrollIntoView({ block: "end" });
+	}, [logText]);
 
 	return (
 		<div className="grid gap-4 lg:grid-cols-2">
@@ -41,6 +49,7 @@ export function JobLogPanel({
 								<TableHead>Source</TableHead>
 								<TableHead>Trigger</TableHead>
 								<TableHead>Status</TableHead>
+								<TableHead className="max-w-[140px]">Error</TableHead>
 								<TableHead>Started</TableHead>
 								<TableHead className="text-end">Log</TableHead>
 							</TableRow>
@@ -58,6 +67,14 @@ export function JobLogPanel({
 										</TableCell>
 										<TableCell>{j.trigger}</TableCell>
 										<TableCell>{formatJobStatus(j.status)}</TableCell>
+										<TableCell
+											className="text-muted-foreground max-w-[140px] truncate text-xs"
+											title={j.error_message ?? undefined}
+										>
+											{j.status === "failed" && j.error_message
+												? j.error_message
+												: "—"}
+										</TableCell>
 										<TableCell className="text-muted-foreground whitespace-nowrap">
 											{formatRelativeShort(j.started_at)}
 										</TableCell>
@@ -98,8 +115,9 @@ export function JobLogPanel({
 					</p>
 				) : null}
 				{!logLoading && logText !== null ? (
-					<ScrollArea className="h-[min(420px,50vh)] break-words rounded-none border border-border bg-muted/30 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap">
+					<ScrollArea className="h-[min(420px,50vh)] wrap-break-word rounded-none border border-border bg-muted/30 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap">
 						{logPreview.length > 0 ? logPreview : "(empty log)"}
+						<div ref={logEndRef} aria-hidden />
 					</ScrollArea>
 				) : null}
 			</div>

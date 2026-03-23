@@ -8,7 +8,10 @@ import {
 	TableRow,
 } from "#/components/ui/table";
 import type { videos } from "#/db/schema";
-import { formatIsoDateTime } from "#/lib/formatters";
+import {
+	formatDownloadStatusDisplay,
+	formatIsoDateTime,
+} from "#/lib/formatters";
 
 type VideoRow = InferSelectModel<typeof videos>;
 
@@ -65,6 +68,10 @@ export function SourceVideosTable({
 								v.unavailable_reason ??
 								v.unavailable_kind ??
 								(v.removed_from_source ? "Removed from source" : "—");
+							const downloadLabel = formatDownloadStatusDisplay(
+								v.download_status,
+								v.download_error,
+							);
 							return (
 								<TableRow key={v.id}>
 									<TableCell className="max-w-[220px] truncate font-medium">
@@ -80,7 +87,12 @@ export function SourceVideosTable({
 									>
 										{reason}
 									</TableCell>
-									<TableCell>{v.download_status}</TableCell>
+									<TableCell
+										className="max-w-[200px] truncate"
+										title={downloadLabel}
+									>
+										{downloadLabel}
+									</TableCell>
 									<TableCell className="text-muted-foreground whitespace-nowrap">
 										{formatIsoDateTime(v.last_seen_at)}
 									</TableCell>

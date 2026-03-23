@@ -36,3 +36,17 @@ export function formatJobStatus(
 ): string {
 	return status;
 }
+
+type DownloadStatus = "not_downloaded" | "downloaded" | "failed" | "skipped";
+
+export function formatDownloadStatusDisplay(
+	status: DownloadStatus,
+	downloadError: string | null | undefined,
+): string {
+	const hasError =
+		typeof downloadError === "string" && downloadError.trim().length > 0;
+	if (status === "failed" && hasError) {
+		return `${status}: ${downloadError.trim()}`;
+	}
+	return status;
+}

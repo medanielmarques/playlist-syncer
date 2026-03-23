@@ -82,6 +82,13 @@ export function AppSettingsCard({
 	};
 
 	const isBusy = disabled || pendingSettings || pendingSync;
+	const parsedInterval = Number.parseInt(localHours, 10);
+	const summaryInterval = Number.isFinite(parsedInterval)
+		? Math.max(1, parsedInterval)
+		: hours;
+	const scheduleSummary = enabled
+		? `Auto sync runs every ${summaryInterval} hour${summaryInterval === 1 ? "" : "s"} after the last global sync (startup, manual, or automatic).`
+		: "Auto sync is off. Use Sync all now or wait for the next app startup sync.";
 
 	return (
 		<Card>
@@ -94,6 +101,9 @@ export function AppSettingsCard({
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="flex flex-col gap-4">
+				<p className="text-muted-foreground text-xs/relaxed">
+					{scheduleSummary}
+				</p>
 				<div className="flex items-center justify-between gap-4">
 					<div className="flex flex-col gap-1">
 						<Label htmlFor="auto-sync">Auto sync</Label>

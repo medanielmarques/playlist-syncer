@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { type FormEvent, useState } from "react";
 import { Button } from "#/components/ui/button";
 import {
 	Card,
@@ -20,7 +20,7 @@ export function AddSourceForm({ onAdd, disabled = false }: AddSourceFormProps) {
 	const [pending, setPending] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
-	const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+	const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
 		const trimmed = url.trim();
 		if (!trimmed) {
