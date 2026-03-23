@@ -1,15 +1,12 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { SourceInspectionError } from "#/lib/server/source-inspector";
-import {
-	addSourceFromUrl,
-	listSourcesForDashboard,
-	SourceAlreadyExistsError,
-} from "#/lib/server/source-service";
 
 const getSources = createServerFn({
 	method: "GET",
 }).handler(async () => {
+	const { listSourcesForDashboard } = await import(
+		"#/lib/server/source-service"
+	);
 	return await listSourcesForDashboard();
 });
 
@@ -18,7 +15,10 @@ const createSource = createServerFn({
 })
 	.inputValidator((data: { url: string }) => data)
 	.handler(async ({ data }) => {
-		await addSourceFromUrl(data.url);
+		const { addSourceForDashboard } = await import(
+			"#/lib/server/dashboard-route-handlers"
+		);
+		await addSourceForDashboard(data.url);
 		return { success: true as const };
 	});
 
@@ -44,10 +44,7 @@ function DemoDrizzle() {
 			(e.target as HTMLFormElement).reset();
 		} catch (error) {
 			const message =
-				error instanceof SourceInspectionError ||
-				error instanceof SourceAlreadyExistsError
-					? error.message
-					: "Failed to add source";
+				error instanceof Error ? error.message : "Failed to add source";
 			console.error("Failed to create source:", error);
 			window.alert(message);
 		}

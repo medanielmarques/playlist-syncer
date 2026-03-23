@@ -1,6 +1,6 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { eq, type InferSelectModel } from "drizzle-orm";
+import type { InferSelectModel } from "drizzle-orm";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AddSourceForm } from "#/components/add-source-form";
 import { AppSettingsCard } from "#/components/app-settings-card";
@@ -8,8 +8,7 @@ import { JobLogPanel } from "#/components/job-log-panel";
 import { RemoveSourceDialog } from "#/components/remove-source-dialog";
 import { SourceVideosTable } from "#/components/source-videos-table";
 import { SourcesTable } from "#/components/sources-table";
-import { db } from "#/db/index";
-import { appSettings, type sources, type videos } from "#/db/schema";
+import type { sources, videos } from "#/db/schema";
 import {
 	addSourceInputSchema,
 	jobIdInputSchema,
@@ -17,98 +16,65 @@ import {
 	sourceIdInputSchema,
 	updateAppSettingsInputSchema,
 } from "#/lib/schemas";
-import { runAppBootstrap } from "#/lib/server/bootstrap";
-import { ensureSchedulerStarted } from "#/lib/server/scheduler";
-import { SourceInspectionError } from "#/lib/server/source-inspector";
-import {
-	addSourceFromUrl,
-	listSourcesForDashboard,
-	listVideosForSource,
-	type RemoveSourceMode,
-	removeSource,
-	SourceAlreadyExistsError,
-	updateAppSettings,
-} from "#/lib/server/source-service";
-import {
-	getJobLogById,
-	listRecentJobsForDashboard,
-	syncAllSources,
-} from "#/lib/server/sync-service";
-
-const RECENT_JOBS_LIMIT = 40;
+import type { RemoveSourceMode } from "#/lib/server/source-service";
 
 const getDashboard = createServerFn({ method: "GET" }).handler(async () => {
-	await runAppBootstrap();
-	ensureSchedulerStarted();
-
-	const settings = await db.query.appSettings.findFirst({
-		where: eq(appSettings.id, 1),
-	});
-	const sourceList = await listSourcesForDashboard();
-	const recentJobs = await listRecentJobsForDashboard(RECENT_JOBS_LIMIT);
-
-	return { settings, sources: sourceList, recentJobs };
+	const { loadDashboard } = await import(
+		"#/lib/server/dashboard-route-handlers"
+	);
+	return loadDashboard();
 });
 
 const addSource = createServerFn({ method: "POST" })
 	.inputValidator((data) => addSourceInputSchema.parse(data))
 	.handler(async ({ data }) => {
-		await runAppBootstrap();
-		ensureSchedulerStarted();
-		try {
-			return await addSourceFromUrl(data.url);
-		} catch (e) {
-			if (
-				e instanceof SourceInspectionError ||
-				e instanceof SourceAlreadyExistsError
-			) {
-				throw e;
-			}
-			throw e;
-		}
+		const { addSourceForDashboard } = await import(
+			"#/lib/server/dashboard-route-handlers"
+		);
+		return addSourceForDashboard(data.url);
 	});
 
 const syncAllNow = createServerFn({ method: "POST" }).handler(async () => {
-	await runAppBootstrap();
-	ensureSchedulerStarted();
-	void syncAllSources("manual").catch((err) => {
-		console.error("[dashboard] manual sync all failed", err);
-	});
-	return { ok: true as const };
+	const { syncAllNowForDashboard } = await import(
+		"#/lib/server/dashboard-route-handlers"
+	);
+	return syncAllNowForDashboard();
 });
 
 const updateAppSettingsFn = createServerFn({ method: "POST" })
 	.inputValidator((data) => updateAppSettingsInputSchema.parse(data))
 	.handler(async ({ data }) => {
-		await runAppBootstrap();
-		await updateAppSettings(data);
-		return { ok: true as const };
+		const { updateAppSettingsForDashboard } = await import(
+			"#/lib/server/dashboard-route-handlers"
+		);
+		return updateAppSettingsForDashboard(data);
 	});
 
 const getSourceVideos = createServerFn({ method: "POST" })
 	.inputValidator((data) => sourceIdInputSchema.parse(data))
 	.handler(async ({ data }) => {
-		await runAppBootstrap();
-		return await listVideosForSource(data.sourceId);
+		const { listVideosForDashboard } = await import(
+			"#/lib/server/dashboard-route-handlers"
+		);
+		return listVideosForDashboard(data.sourceId);
 	});
 
 const getJobLog = createServerFn({ method: "POST" })
 	.inputValidator((data) => jobIdInputSchema.parse(data))
 	.handler(async ({ data }) => {
-		await runAppBootstrap();
-		const job = await getJobLogById(data.jobId);
-		if (!job) {
-			throw new Error(`Job ${data.jobId} not found`);
-		}
-		return job;
+		const { getJobLogForDashboard } = await import(
+			"#/lib/server/dashboard-route-handlers"
+		);
+		return getJobLogForDashboard(data.jobId);
 	});
 
 const removeSourceFn = createServerFn({ method: "POST" })
 	.inputValidator((data) => removeSourceInputSchema.parse(data))
 	.handler(async ({ data }) => {
-		await runAppBootstrap();
-		await removeSource(data.sourceId, data.mode);
-		return { ok: true as const };
+		const { removeSourceForDashboard } = await import(
+			"#/lib/server/dashboard-route-handlers"
+		);
+		return removeSourceForDashboard(data.sourceId, data.mode);
 	});
 
 export const Route = createFileRoute("/")({
