@@ -1,22 +1,30 @@
 /**
- * Applies SQL migrations under ./drizzle using Bun's built-in SQLite.
- * Use instead of `drizzle-kit migrate`, which expects better-sqlite3 (Node native).
+ * Applies SQL migrations under ./drizzle using better-sqlite3.
+ *
+ * Run via `bun run db:migrate` (or `pnpm exec tsx …`): the `tsx` CLI uses Node.
+ * Do not execute this file with the Bun runtime alone — Bun does not load
+ * `better-sqlite3`.
  *
  * Paths are resolved from the repo root (parent of /scripts), not process.cwd(),
- * so `bun run db:migrate` works from any directory.
+ * so migrations work from any working directory.
  */
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { drizzle } from "drizzle-orm/bun-sqlite";
-import { migrate } from "drizzle-orm/bun-sqlite/migrator";
+import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/better-sqlite3";
+import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
-const repoRoot = path.resolve(import.meta.dir, "..");
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(scriptDir, "..");
 const dbPath = path.join(repoRoot, "sqlite.db");
 const migrationsFolder = path.join(repoRoot, "drizzle");
 
-const db = drizzle(dbPath);
-db.$client.exec("PRAGMA foreign_keys = ON");
+const sqlite = new Database(dbPath);
+sqlite.pragma("foreign_keys = ON");
+const db = drizzle(sqlite);
 
 migrate(db, { migrationsFolder });
+sqlite.close();
 
 console.log("Migrations applied.");

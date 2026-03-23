@@ -3,7 +3,7 @@ import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
 
 import { db } from "#/db/index";
 import { appSettings, jobs, sources, videos } from "#/db/schema";
@@ -559,4 +559,52 @@ export async function syncAllSources(
 		allSources.map((s) => syncSource(s.id, trigger)),
 	);
 	return { results };
+}
+
+export type DashboardJobSummary = {
+	id: number;
+	source_id: number;
+	source_title: string | null;
+	trigger: "startup" | "manual" | "auto";
+	status: "pending" | "running" | "completed" | "failed";
+	started_at: string | null;
+	finished_at: string | null;
+	error_message: string | null;
+};
+
+export async function listRecentJobsForDashboard(
+	limit: number,
+): Promise<DashboardJobSummary[]> {
+	return await db
+		.select({
+			id: jobs.id,
+			source_id: jobs.source_id,
+			source_title: sources.title,
+			trigger: jobs.trigger,
+			status: jobs.status,
+			started_at: jobs.started_at,
+			finished_at: jobs.finished_at,
+			error_message: jobs.error_message,
+		})
+		.from(jobs)
+		.innerJoin(sources, eq(jobs.source_id, sources.id))
+		.orderBy(desc(jobs.started_at))
+		.limit(limit);
+}
+
+export async function getJobLogById(jobId: number) {
+	return await db.query.jobs.findFirst({
+		where: eq(jobs.id, jobId),
+		columns: {
+			id: true,
+			source_id: true,
+			trigger: true,
+			status: true,
+			started_at: true,
+			finished_at: true,
+			exit_code: true,
+			log_text: true,
+			error_message: true,
+		},
+	});
 }

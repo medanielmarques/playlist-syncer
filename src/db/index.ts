@@ -1,11 +1,17 @@
-import { drizzle } from "drizzle-orm/bun-sqlite";
+import path from "node:path";
+
+import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/better-sqlite3";
 
 import * as schema from "./schema.ts";
 
-const db = drizzle("./sqlite.db", { schema });
+const dbPath = path.join(process.cwd(), "sqlite.db");
+const sqlite = new Database(dbPath);
 
-db.$client.exec("PRAGMA foreign_keys = ON");
-db.$client.exec("PRAGMA journal_mode = WAL");
+sqlite.pragma("foreign_keys = ON");
+sqlite.pragma("journal_mode = WAL");
+
+const db = drizzle(sqlite, { schema });
 
 export { db };
 

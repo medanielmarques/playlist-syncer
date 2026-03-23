@@ -1,7 +1,9 @@
+import fs from "node:fs/promises";
+
 import { and, eq } from "drizzle-orm";
 
 import { db } from "#/db/index";
-import { sources } from "#/db/schema";
+import { appSettings, sources, videos } from "#/db/schema";
 import {
 	buildArchivePath,
 	buildSourceOutputDir,
@@ -143,4 +145,61 @@ export async function listSourcesForDashboard() {
 	return await db.query.sources.findMany({
 		orderBy: (s, { desc }) => [desc(s.created_at)],
 	});
+}
+
+export type RemoveSourceMode = "app-only" | "app-and-files";
+
+/**
+ * Removes the source from the database (cascading jobs and videos). With
+ * `app-and-files`, also deletes the download folder and archive file on disk.
+ */
+export async function removeSource(
+	sourceId: number,
+	mode: RemoveSourceMode,
+): Promise<void> {
+	const row = await db.query.sources.findFirst({
+		where: eq(sources.id, sourceId),
+	});
+	if (!row) {
+		throw new Error(`Source ${sourceId} not found`);
+	}
+
+	const shouldDeleteFiles = mode === "app-and-files";
+	if (shouldDeleteFiles) {
+		try {
+			await fs.rm(row.output_dir, { recursive: true, force: true });
+		} catch {
+			// Folder may already be missing; continue with DB removal.
+		}
+		try {
+			await fs.unlink(row.archive_path);
+		} catch {
+			// Archive may already be missing.
+		}
+	}
+
+	await db.delete(sources).where(eq(sources.id, sourceId));
+}
+
+export async function listVideosForSource(sourceId: number) {
+	return await db.query.videos.findMany({
+		where: eq(videos.source_id, sourceId),
+		orderBy: (v, { asc }) => [asc(v.playlist_index), asc(v.id)],
+	});
+}
+
+export async function updateAppSettings(patch: {
+	auto_sync_enabled: boolean;
+	auto_sync_interval_hours: number;
+}): Promise<void> {
+	const intervalHours = Math.max(1, Math.floor(patch.auto_sync_interval_hours));
+	const now = new Date().toISOString();
+	await db
+		.update(appSettings)
+		.set({
+			auto_sync_enabled: patch.auto_sync_enabled,
+			auto_sync_interval_hours: intervalHours,
+			updated_at: now,
+		})
+		.where(eq(appSettings.id, 1));
 }

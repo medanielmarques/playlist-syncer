@@ -1,72 +1,351 @@
-import { spawn } from "node:child_process";
-import os from "node:os";
-import path from "node:path";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { useState } from "react";
-import { Button } from "#/components/ui/button";
+import { eq, type InferSelectModel } from "drizzle-orm";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AddSourceForm } from "#/components/add-source-form";
+import { AppSettingsCard } from "#/components/app-settings-card";
+import { JobLogPanel } from "#/components/job-log-panel";
+import { RemoveSourceDialog } from "#/components/remove-source-dialog";
+import { SourceVideosTable } from "#/components/source-videos-table";
+import { SourcesTable } from "#/components/sources-table";
+import { db } from "#/db/index";
+import { appSettings, type sources, type videos } from "#/db/schema";
+import {
+	addSourceInputSchema,
+	jobIdInputSchema,
+	removeSourceInputSchema,
+	sourceIdInputSchema,
+	updateAppSettingsInputSchema,
+} from "#/lib/schemas";
+import { runAppBootstrap } from "#/lib/server/bootstrap";
+import { ensureSchedulerStarted } from "#/lib/server/scheduler";
+import { SourceInspectionError } from "#/lib/server/source-inspector";
+import {
+	addSourceFromUrl,
+	listSourcesForDashboard,
+	listVideosForSource,
+	type RemoveSourceMode,
+	removeSource,
+	SourceAlreadyExistsError,
+	updateAppSettings,
+} from "#/lib/server/source-service";
+import {
+	getJobLogById,
+	listRecentJobsForDashboard,
+	syncAllSources,
+} from "#/lib/server/sync-service";
 
-export const Route = createFileRoute("/")({ component: App });
+const RECENT_JOBS_LIMIT = 40;
 
-const YT_DLP_PATH = path.join(process.cwd(), "resources", "bin", "yt-dlp");
-const OUTPUT_TEMPLATE = path.join(
-	os.homedir(),
-	"Downloads",
-	"%(title)s.%(ext)s",
-);
+const getDashboard = createServerFn({ method: "GET" }).handler(async () => {
+	await runAppBootstrap();
+	ensureSchedulerStarted();
 
-const syncPlaylist = createServerFn({
-	method: "POST",
-})
-	.inputValidator((data: { playlistId: string }) => data)
+	const settings = await db.query.appSettings.findFirst({
+		where: eq(appSettings.id, 1),
+	});
+	const sourceList = await listSourcesForDashboard();
+	const recentJobs = await listRecentJobsForDashboard(RECENT_JOBS_LIMIT);
+
+	return { settings, sources: sourceList, recentJobs };
+});
+
+const addSource = createServerFn({ method: "POST" })
+	.inputValidator((data) => addSourceInputSchema.parse(data))
 	.handler(async ({ data }) => {
-		return new Promise<{ success: true }>((resolve, reject) => {
-			const proc = spawn(YT_DLP_PATH, ["-o", OUTPUT_TEMPLATE, data.playlistId]);
-
-			let stderr = "";
-			proc.stderr?.on("data", (chunk) => {
-				stderr += chunk.toString();
-			});
-
-			proc.on("close", (code) => {
-				if (code === 0) {
-					resolve({ success: true });
-				} else {
-					reject(new Error(`yt-dlp exited with code ${code}: ${stderr}`));
-				}
-			});
-
-			proc.on("error", (err) => {
-				reject(err);
-				console.error(err);
-			});
-		});
+		await runAppBootstrap();
+		ensureSchedulerStarted();
+		try {
+			return await addSourceFromUrl(data.url);
+		} catch (e) {
+			if (
+				e instanceof SourceInspectionError ||
+				e instanceof SourceAlreadyExistsError
+			) {
+				throw e;
+			}
+			throw e;
+		}
 	});
 
-function App() {
-	const [value, setValue] = useState("");
+const syncAllNow = createServerFn({ method: "POST" }).handler(async () => {
+	await runAppBootstrap();
+	ensureSchedulerStarted();
+	void syncAllSources("manual").catch((err) => {
+		console.error("[dashboard] manual sync all failed", err);
+	});
+	return { ok: true as const };
+});
 
-	const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-		setValue(e.target.value);
-	};
+const updateAppSettingsFn = createServerFn({ method: "POST" })
+	.inputValidator((data) => updateAppSettingsInputSchema.parse(data))
+	.handler(async ({ data }) => {
+		await runAppBootstrap();
+		await updateAppSettings(data);
+		return { ok: true as const };
+	});
 
-	const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-		e.preventDefault();
-		await syncPlaylist({ data: { playlistId: value } });
-	};
+const getSourceVideos = createServerFn({ method: "POST" })
+	.inputValidator((data) => sourceIdInputSchema.parse(data))
+	.handler(async ({ data }) => {
+		await runAppBootstrap();
+		return await listVideosForSource(data.sourceId);
+	});
+
+const getJobLog = createServerFn({ method: "POST" })
+	.inputValidator((data) => jobIdInputSchema.parse(data))
+	.handler(async ({ data }) => {
+		await runAppBootstrap();
+		const job = await getJobLogById(data.jobId);
+		if (!job) {
+			throw new Error(`Job ${data.jobId} not found`);
+		}
+		return job;
+	});
+
+const removeSourceFn = createServerFn({ method: "POST" })
+	.inputValidator((data) => removeSourceInputSchema.parse(data))
+	.handler(async ({ data }) => {
+		await runAppBootstrap();
+		await removeSource(data.sourceId, data.mode);
+		return { ok: true as const };
+	});
+
+export const Route = createFileRoute("/")({
+	loader: async () => await getDashboard(),
+	component: DashboardPage,
+});
+
+type SourceRow = InferSelectModel<typeof sources>;
+type VideoRow = InferSelectModel<typeof videos>;
+
+function DashboardPage() {
+	const router = useRouter();
+	const data = Route.useLoaderData();
+	const [selectedSourceId, setSelectedSourceId] = useState<number | null>(null);
+	const [videosState, setVideosState] = useState<VideoRow[] | null>(null);
+	const [videosLoading, setVideosLoading] = useState(false);
+	const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
+	const [jobLogText, setJobLogText] = useState<string | null>(null);
+	const [jobLogLoading, setJobLogLoading] = useState(false);
+	const [removeTarget, setRemoveTarget] = useState<SourceRow | null>(null);
+	const [removeOpen, setRemoveOpen] = useState(false);
+
+	const selectedSource = useMemo(() => {
+		if (selectedSourceId === null) {
+			return undefined;
+		}
+		return data.sources.find((s) => s.id === selectedSourceId);
+	}, [data.sources, selectedSourceId]);
+
+	const selectedSourceRunning = selectedSource?.last_sync_status === "running";
+
+	const selectedJobMeta = useMemo(() => {
+		if (selectedJobId === null) {
+			return undefined;
+		}
+		return data.recentJobs.find((j) => j.id === selectedJobId);
+	}, [data.recentJobs, selectedJobId]);
+
+	const hasActivity = useMemo(() => {
+		const jobRunning = data.recentJobs.some((j) => j.status === "running");
+		const sourceRunning = data.sources.some(
+			(s) => s.last_sync_status === "running",
+		);
+		return jobRunning || sourceRunning;
+	}, [data.recentJobs, data.sources]);
+
+	useEffect(() => {
+		const intervalMs = hasActivity ? 1000 : 30_000;
+		const id = window.setInterval(() => {
+			void router.invalidate();
+		}, intervalMs);
+		return () => window.clearInterval(id);
+	}, [hasActivity, router]);
+
+	useEffect(() => {
+		if (selectedSourceId === null) {
+			setVideosState(null);
+			return;
+		}
+		let cancelled = false;
+
+		const loadVideos = (withSpinner: boolean) => {
+			if (withSpinner) {
+				setVideosLoading(true);
+			}
+			void getSourceVideos({ data: { sourceId: selectedSourceId } })
+				.then((rows) => {
+					if (!cancelled) {
+						setVideosState(rows);
+					}
+				})
+				.catch(() => {
+					if (!cancelled) {
+						setVideosState([]);
+					}
+				})
+				.finally(() => {
+					if (!cancelled && withSpinner) {
+						setVideosLoading(false);
+					}
+				});
+		};
+
+		loadVideos(true);
+
+		const pollVideos = selectedSourceRunning
+			? window.setInterval(() => loadVideos(false), 1000)
+			: null;
+
+		return () => {
+			cancelled = true;
+			if (pollVideos !== null) {
+				window.clearInterval(pollVideos);
+			}
+		};
+	}, [selectedSourceId, selectedSourceRunning]);
+
+	useEffect(() => {
+		if (selectedJobId === null) {
+			setJobLogText(null);
+			return;
+		}
+		let cancelled = false;
+
+		const loadLog = (withSpinner: boolean) => {
+			if (withSpinner) {
+				setJobLogLoading(true);
+			}
+			void getJobLog({ data: { jobId: selectedJobId } })
+				.then((job) => {
+					if (!cancelled) {
+						setJobLogText(job.log_text ?? "");
+					}
+				})
+				.catch(() => {
+					if (!cancelled) {
+						setJobLogText(null);
+					}
+				})
+				.finally(() => {
+					if (!cancelled && withSpinner) {
+						setJobLogLoading(false);
+					}
+				});
+		};
+
+		loadLog(true);
+
+		const jobRunning = selectedJobMeta?.status === "running";
+		const pollLog = jobRunning
+			? window.setInterval(() => loadLog(false), 1000)
+			: null;
+
+		return () => {
+			cancelled = true;
+			if (pollLog !== null) {
+				window.clearInterval(pollLog);
+			}
+		};
+	}, [selectedJobId, selectedJobMeta?.status]);
+
+	const handleAddSource = useCallback(
+		async (url: string) => {
+			await addSource({ data: { url } });
+			await router.invalidate();
+		},
+		[router],
+	);
+
+	const handleUpdateSettings = useCallback(
+		async (patch: {
+			auto_sync_enabled: boolean;
+			auto_sync_interval_hours: number;
+		}) => {
+			await updateAppSettingsFn({ data: patch });
+			await router.invalidate();
+		},
+		[router],
+	);
+
+	const handleSyncAllNow = useCallback(async () => {
+		await syncAllNow();
+		await router.invalidate();
+	}, [router]);
+
+	const handleRemoveConfirm = useCallback(
+		async (sourceId: number, mode: RemoveSourceMode) => {
+			await removeSourceFn({ data: { sourceId, mode } });
+			if (selectedSourceId === sourceId) {
+				setSelectedSourceId(null);
+				setVideosState(null);
+			}
+			await router.invalidate();
+		},
+		[router, selectedSourceId],
+	);
+
+	const handleSelectJob = useCallback((jobId: number) => {
+		setSelectedJobId(jobId);
+	}, []);
 
 	return (
-		<main>
-			<form onSubmit={handleSubmit}>
-				<input
-					className="border border-green-300 rounded-md p-2"
-					type="text"
-					value={value}
-					onChange={handleChange}
+		<div className="bg-background text-foreground min-h-screen">
+			<div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8">
+				<header className="flex flex-col gap-1">
+					<h1 className="text-lg font-semibold tracking-tight">
+						Playlist Syncer
+					</h1>
+					<p className="text-muted-foreground text-xs/relaxed">
+						Local dashboard for YouTube playlists and channels. Downloads go to{" "}
+						<code className="bg-muted rounded px-1 py-0.5 font-mono text-[11px]">
+							~/playlist-syncer
+						</code>
+						.
+					</p>
+				</header>
+
+				<div className="grid gap-6 lg:grid-cols-2">
+					<AddSourceForm onAdd={handleAddSource} />
+					<AppSettingsCard
+						settings={data.settings ?? undefined}
+						onUpdate={handleUpdateSettings}
+						onSyncAllNow={handleSyncAllNow}
+					/>
+				</div>
+
+				<SourcesTable
+					sources={data.sources}
+					selectedSourceId={selectedSourceId}
+					onSelectSource={setSelectedSourceId}
+					onRemoveClick={(s) => {
+						setRemoveTarget(s);
+						setRemoveOpen(true);
+					}}
 				/>
 
-				<Button type="submit">Sync</Button>
-			</form>
-		</main>
+				<SourceVideosTable
+					sourceTitle={selectedSource?.title ?? null}
+					videos={videosState}
+					loading={videosLoading}
+				/>
+
+				<JobLogPanel
+					recentJobs={data.recentJobs}
+					selectedJobId={selectedJobId}
+					onSelectJob={handleSelectJob}
+					logText={jobLogText}
+					logLoading={jobLogLoading}
+				/>
+
+				<RemoveSourceDialog
+					source={removeTarget}
+					open={removeOpen}
+					onOpenChange={setRemoveOpen}
+					onConfirm={handleRemoveConfirm}
+				/>
+			</div>
+		</div>
 	);
 }
